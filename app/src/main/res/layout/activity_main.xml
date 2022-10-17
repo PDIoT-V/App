@@ -42,12 +42,12 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="100px"
             android:background="#03A9F4"
-            android:text="Watch live processing"
+            android:text="Watch the prediction"
             android:textColor="#FFFFFF"
+            app:layout_constraintBottom_toTopOf="@+id/ble_button"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/record_button"
-            app:layout_constraintBottom_toTopOf="@+id/ble_button"/>
+            app:layout_constraintTop_toBottomOf="@+id/record_button" />
 
 
         <Button

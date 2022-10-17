@@ -4,12 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.*
 import androidx.appcompat.app.AppCompatActivity
-import android.os.Bundle
-import android.os.Handler
-import android.os.HandlerThread
-import android.os.Looper
 import android.util.Log
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.data.Entry
@@ -17,14 +15,37 @@ import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.interfaces.datasets.ILineDataSet
 import com.specknet.pdiotapp.R
+import com.specknet.pdiotapp.ml.Model
 import com.specknet.pdiotapp.utils.Constants
 import com.specknet.pdiotapp.utils.RESpeckLiveData
 import com.specknet.pdiotapp.utils.ThingyLiveData
+import org.tensorflow.lite.DataType
+import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import kotlin.collections.ArrayList
 
 
 class LiveDataActivity : AppCompatActivity() {
+    val featureMap = mapOf(
+        0 to "Climbing stairs",
+        1 to "Descending stairs",
+        2 to "Desk work",
+        3 to "Lying down left",
+        4 to "Lying down on back",
+        5 to "Lying down on stomach",
+        6 to "Lying down right",
+        7 to "Movement",
+        8 to "Running",
+        9 to "Sitting",
+        10 to "Sitting bent forward",
+        11 to "Sitting bent forward",
+        12 to "Standing",
+        13 to "Walking"
 
+    )
+
+
+    var inputArray = FloatArray(40 * 6) { 0.toFloat()}
+    lateinit var predictText: TextView
     // global graph variables
     lateinit var dataSet_res_accel_x: LineDataSet
     lateinit var dataSet_res_accel_y: LineDataSet
@@ -57,6 +78,7 @@ class LiveDataActivity : AppCompatActivity() {
 
         setupCharts()
 
+
         // set up the broadcast receiver
         respeckLiveUpdateReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
@@ -76,8 +98,16 @@ class LiveDataActivity : AppCompatActivity() {
                     val y = liveData.accelY
                     val z = liveData.accelZ
 
+                    val gx = liveData.gyro.x
+                    val gy = liveData.gyro.y
+                    val gz = liveData.gyro.z
+
                     time += 1
                     updateGraph("respeck", x, y, z)
+                    var inputArrayList = inputArray.drop(6).toMutableList()
+                    inputArrayList.addAll(arrayListOf(x, y, z, gx, gy, gz))
+                    inputArray = inputArrayList.toFloatArray()
+                    var predict=updatePredictText()
 
                 }
             }
@@ -89,46 +119,14 @@ class LiveDataActivity : AppCompatActivity() {
         looperRespeck = handlerThreadRespeck.looper
         val handlerRespeck = Handler(looperRespeck)
         this.registerReceiver(respeckLiveUpdateReceiver, filterTestRespeck, null, handlerRespeck)
-
-        // set up the broadcast receiver
-        thingyLiveUpdateReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-
-                Log.i("thread", "I am running on thread = " + Thread.currentThread().name)
-
-                val action = intent.action
-
-                if (action == Constants.ACTION_THINGY_BROADCAST) {
-
-                    val liveData =
-                        intent.getSerializableExtra(Constants.THINGY_LIVE_DATA) as ThingyLiveData
-                    Log.d("Live", "onReceive: liveData = " + liveData)
-
-                    // get all relevant intent contents
-                    val x = liveData.accelX
-                    val y = liveData.accelY
-                    val z = liveData.accelZ
-
-                    time += 1
-                    updateGraph("thingy", x, y, z)
-
-                }
-            }
-        }
-
-        // register receiver on another thread
-        val handlerThreadThingy = HandlerThread("bgThreadThingyLive")
-        handlerThreadThingy.start()
-        looperThingy = handlerThreadThingy.looper
-        val handlerThingy = Handler(looperThingy)
-        this.registerReceiver(thingyLiveUpdateReceiver, filterTestThingy, null, handlerThingy)
-
     }
+
+
 
 
     fun setupCharts() {
         respeckChart = findViewById(R.id.respeck_chart)
-        thingyChart = findViewById(R.id.thingy_chart)
+        //thingyChart = findViewById(R.id.thingy_chart)
 
         // Respeck
 
@@ -172,49 +170,6 @@ class LiveDataActivity : AppCompatActivity() {
         allRespeckData = LineData(dataSetsRes)
         respeckChart.data = allRespeckData
         respeckChart.invalidate()
-
-        // Thingy
-
-        time = 0f
-        val entries_thingy_accel_x = ArrayList<Entry>()
-        val entries_thingy_accel_y = ArrayList<Entry>()
-        val entries_thingy_accel_z = ArrayList<Entry>()
-
-        dataSet_thingy_accel_x = LineDataSet(entries_thingy_accel_x, "Accel X")
-        dataSet_thingy_accel_y = LineDataSet(entries_thingy_accel_y, "Accel Y")
-        dataSet_thingy_accel_z = LineDataSet(entries_thingy_accel_z, "Accel Z")
-
-        dataSet_thingy_accel_x.setDrawCircles(false)
-        dataSet_thingy_accel_y.setDrawCircles(false)
-        dataSet_thingy_accel_z.setDrawCircles(false)
-
-        dataSet_thingy_accel_x.setColor(
-            ContextCompat.getColor(
-                this,
-                R.color.red
-            )
-        )
-        dataSet_thingy_accel_y.setColor(
-            ContextCompat.getColor(
-                this,
-                R.color.green
-            )
-        )
-        dataSet_thingy_accel_z.setColor(
-            ContextCompat.getColor(
-                this,
-                R.color.blue
-            )
-        )
-
-        val dataSetsThingy = ArrayList<ILineDataSet>()
-        dataSetsThingy.add(dataSet_thingy_accel_x)
-        dataSetsThingy.add(dataSet_thingy_accel_y)
-        dataSetsThingy.add(dataSet_thingy_accel_z)
-
-        allThingyData = LineData(dataSetsThingy)
-        thingyChart.data = allThingyData
-        thingyChart.invalidate()
     }
 
     fun updateGraph(graph: String, x: Float, y: Float, z: Float) {
@@ -246,8 +201,8 @@ class LiveDataActivity : AppCompatActivity() {
             }
         }
 
-
     }
+
 
 
     override fun onDestroy() {
@@ -256,5 +211,47 @@ class LiveDataActivity : AppCompatActivity() {
         unregisterReceiver(thingyLiveUpdateReceiver)
         looperRespeck.quit()
         looperThingy.quit()
+    }
+    fun updatePredictText() : String? {
+        // take the first element from the queue
+        // and update the graph with it
+        predictText = findViewById(R.id.prediction)
+        val model = Model.newInstance(this)
+
+        // Creates inputs for reference.
+        val inputFeature0 = TensorBuffer.createFixedSize(intArrayOf(1, 40, 6), DataType.FLOAT32)
+//            inputFeature0.loadBuffer(byteBuffer)
+        inputFeature0.loadArray(inputArray)
+
+        // Runs model inference and gets result.
+        val outputs = model.process(inputFeature0)
+        val outputFeature0 = outputs.outputFeature0AsTensorBuffer
+
+
+        // get feature with max probability
+        var max = getMax(outputFeature0.floatArray)
+
+        // display result
+        // var s = "Predicting... ($x, $y, $z, $gx, $gy, $gz)"
+        var s = featureMap[max] // + "Predicting... ($x, $y, $z, $gx, $gy, $gz)"
+        predictText.text = s
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            predictText.setAutoSizeTextTypeWithDefaults(TextView.AUTO_SIZE_TEXT_TYPE_UNIFORM);
+        };
+        model.close()
+        return s;
+    }
+    fun getMax(arr:FloatArray) : Int{
+        var index = 0
+        var max = 0.0f
+
+        for(i in 0..6){
+            if(arr[i]>max){
+                index = i
+                max = arr[i]
+            }
+        }
+        return index
+
     }
 }
